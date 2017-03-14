@@ -3,5 +3,5 @@
 # Put this in your .bashrc
 # alias mkcd='source /path/to/mkcd'
 
-mkdir -p "$@" &&
-cd "$@"
+mkdir -p "$*" &&
+cd "$*"
