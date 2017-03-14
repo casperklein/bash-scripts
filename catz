@@ -1,0 +1,20 @@
+#!/bin/bash
+
+[ -t 0 ] && [ "$1" == "" ] &&
+	echo "Concatenate files (gziped files decompressed) and print on the standard output." >&2 &&
+	echo "Syntax: catz [<file>]" >&2 &&
+	echo >&2 &&
+	exit 1
+
+[ ! -t 0 ] && cat - # output STDIN
+
+while [ 1 ]; do
+	[ "$1" == "" ] && exit
+	[ "$1" == "-" ] && shift && continue
+	if [[ "$1" =~ gz$ ]]; then
+		zcat "$1"
+	else
+		cat "$1"
+	fi
+        shift
+done
