@@ -9,6 +9,9 @@ Generates a password of custom length.
 ## mkcd
 Make $directory, then change path to $directory.
 
+## pingi
+Ping that also shows "Request timed out" known from Windows.
+
 ## treesize
 A simple "treesize" bash script.
 
