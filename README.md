@@ -3,6 +3,9 @@
 ## catz
 Concatenate files (gziped files decompressed) and print on the standard output.
 
+## cpm
+A file and directory copy tool with status indicators.
+
 ## makepass
 Generates a password of custom length.
 

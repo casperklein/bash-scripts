@@ -1,0 +1,388 @@
+#!/bin/bash
+
+# cpm:      A file and directory copy tool with status indicators
+# Version:  0.45
+# Build:    12-Sep-2012
+# Author:   Heiko Barth
+# Licence:  Beer-Ware (See: http://en.wikipedia.org/wiki/Beerware)
+
+version="0.45"
+
+checkBinarys() {
+	if [ -f /usr/bin/which ] || [ -f /bin/which ] || [ -f /sbin/which ] || [ -f /usr/sbin/which ]; then
+		bin=("$@")
+		for chkBin in "${bin[@]}"; do
+			if [ ! $(which "$chkBin") ]; then
+				cecho "Error: Binary '$chkBin' does not exist." $red
+				echo
+				exit 1
+			fi
+		done
+	else
+		cecho "Error: Binary 'which' does not exist." $red
+		echo
+		exit 1	
+	fi
+}
+
+trapCtrlC() {
+	echo
+	cecho "Aborting.." $red
+	echo
+	exit
+}
+
+checkDst() {
+	# $1 = src
+	# $2 = dst
+	if [ "$(readlink -f "$1")" == "$(readlink -f "$2")" ]; then
+		if [ -h "$2" ] && [ $force ]; then
+			rm -f "$2" || {
+				cecho "Error: '$2' could not be overwritten." $red
+				echo
+				return 2
+			}	
+		else
+			cecho "Warning: Input file '$1' is output file. Skipping.." $yellow
+			echo
+			return 1
+		fi
+	fi
+	
+	if [ -e "$2" ]; then
+		if [ "$force" == "f" ]; then
+			if [ $(stat -c %s "$1") != $(stat -c %s "$2") ]; then
+				cecho "Info: File '$2' already exist. Overwriting.." $yellow
+				return 0
+			else
+				cecho "Warning: File '$2' with same size already exist. Skipping.." $yellow
+				echo
+				return 1
+			fi
+		elif [ "$force" == "F" ]; then
+			cecho "Info: File '$2' already exist. Overwriting.." $yellow
+			return 0
+		else
+			cecho "Warning: File '$2' already exist. Skipping.." $yellow
+			echo
+			return 1
+		fi
+	else
+		return 0
+	fi
+}
+
+setPermissions() {
+	# $1 = src
+	# $2 = dst
+
+	if [ "$1" ]; then
+		if [ "$(id -un 2>/dev/null)" == "root" ] || [ $preserve ]; then
+			chmod "$(stat -c %a "$1")" "$2" 2>/dev/null || cecho "Warning: Failed to set file rights." $red
+			chown "$(stat -c %U "$1")":"$(stat -c %G "$1")" "$2" 2>/dev/null || cecho "Warning: Failed to change owner." $red
+		fi
+	fi
+}
+
+copyDate() {
+	# $1 = src
+	# $2 = dst
+	if [ ! $copyDate ]; then
+		touch -c -r "$1" "$2"
+	fi
+}
+checkHash() {
+	# $1 = src
+	# $2 = dst
+
+	tput sc
+	cecho "Checksum: Comparing SHA-1 hashes.." $yellow -n
+	srcSHA1=$(sha1sum "$1" 2>/dev/null | cut -f 1 -d ' ')
+	dstSHA1=$(sha1sum "$2" 2>/dev/null | cut -f 1 -d ' ')
+	tput el1; tput rc
+	if [ "$srcSHA1" != "$dstSHA1" ]; then
+		cecho "Error: Checksum does not match. File is corrupted." $red
+		echo
+		exit 1
+	else
+		[ $verbose ] && cecho "Checksum: $srcSHA1" $green
+		cecho "Checksum: OK" $green
+	fi
+}
+
+copyDirectory() {
+	# $1 = src
+	# $2 = root source path if recursive 
+	# $3 = recursive trigger
+
+	srcBase=$(basename "$1") # DstDirectoryName
+	if [ "$3" ] ; then
+		# Keep directory structure when copying recursive
+		if [ $file2file ]; then
+			dstDir="$dstDir"/$(dirname "${1:${#2}}")
+		else
+			dstDir="$dstDir"/$(basename "$2")/$(dirname "${1:${#2}}")
+		fi
+	else
+		[ $file2file ] && srcBase=
+	fi
+	
+	dstDir="$dstDir/$srcBase"
+	createDirectory "$1" "$dstDir"
+	
+	# regular files
+	find "$1" -maxdepth 1 -type f -print | while read file; do
+		copyFile "$file"
+	done
+	# symlinks
+	find "$1" -maxdepth 1 -type l -print | while read file; do
+		if [ ! -d $(readlink -f "$file") ]; then
+			copyFile "$file"
+		fi
+	done
+	dstDir="$dstDirFix"
+
+	if [ $recursive ]; then
+		find "$1" -maxdepth 1 -type d | sed 1d | while read directory; do
+			copyDirectory "$1/$(basename "$directory")" "$2" true
+		done
+
+		find "$1" -maxdepth 1 -type l | while read file; do
+			if [ -d $(readlink -f "$file") ]; then
+				if [ $recursive ]; then
+					copyDirectory "$1/$(basename "$file")/" "$2" true # trailing slash needed in 1st argument
+				fi
+			fi
+		done
+
+	fi
+}
+
+copyFile() {
+	# $1 = src
+
+	src="$1"
+	srcBase=$(basename "$1")
+
+	if [ $file2file ] && [ ! -d "$dstDir" ]; then
+		dst="$dstDir"
+	else
+		dst="$dstDir/$srcBase"
+	fi
+	
+	[ ! -h "$src" ] && dst=$(readlink -f "$dst") # just for the optic (regular files only)
+	
+	if [ $verbose ]; then
+		cecho "Source:      $(readlink -f "$src")" $green
+		cecho "Destination: $dst" $green
+	fi
+
+	if [ -h "$src" ] && [ $createSymlink ]; then
+		src=$(readlink -f "$src")
+		if [ ! -e "$dst" ]; then
+			createSymlink "$src" "$dst"
+		else
+			if [ $force ]; then
+				cecho "Warning: File '$dst' already exist. Overwriting.." $yellow
+				rm -f "$dst"
+				createSymlink "$src" "$dst"
+			else
+				cecho "Warning: File '$dst' already exist. Skipping.." $yellow
+				echo
+			fi
+		fi
+	else
+		if (checkDst "$src" "$dst") && [ ! $structureOnly ]; then
+			if [ $hardlinks ]; then
+				createHardlink "$src" "$dst"
+			elif [ $symlinks ]; then
+				createSymlink "$(readlink -f "$src")" "$dst"
+			else
+				(transfer "$src" "$dst") || exit 1
+			fi
+		else
+			[ $? -eq 2 ] && exit 1
+		fi
+	fi
+}
+
+createSymlink() {
+	# $1 = src
+	# $2 = dst
+	echo "File: $(basename "$2")"
+	echo -n "Creating symbolic link..  "
+	if (ln -s "$1" "$2" 2>/dev/null); then
+		cecho "OK" $green
+	else
+		cecho "Failed" $red
+	fi
+	echo
+}
+
+createHardlink() {
+	# $1 = src
+	# $2 = dst
+	echo "File: $(basename "$2")"
+	echo -n "Creating hard link..  "
+	if (ln -f "$1" "$2" 2>/dev/null); then
+		cecho "OK" $green
+	else
+		cecho "Failed" $red
+	fi
+	echo
+}
+
+transfer() {
+	# $1 = src
+	# $2 = dst
+	echo "File: $srcBase"
+	if (pv -bper "$1" > "$2"); then
+		if [ $verify ]; then
+			checkHash "$1" "$2"
+		fi
+		setPermissions "$1" "$2"
+		copyDate "$1" "$2"
+	else
+		cecho "Error: An error occurred while copying." $red
+		echo
+		return 1
+	fi
+	echo
+}
+
+createDirectory() {
+	# $1 = src
+	# $2 = dst
+
+	mkdir -p "$2" 2>/dev/null || {
+		cecho "Error: Could not create target directory => $2" $red
+		echo
+		exit 1
+	}
+	dir=$(readlink -f "$2")
+	cecho "Info: Directory created => $dir" $green
+	setPermissions "$1" "$2"
+}
+
+red='\e[1;31m'    # Light Red
+green='\e[1;32m'  # Light Green
+yellow='\e[1;33m' # Light Yellow
+
+cecho() {
+	# $1 = text
+	# $2 = color
+	# $3 = additional echo options, e.g. -n
+	if [ -t 1 ]; then
+		# Only use colors when file descriptor FD is open and refers to a terminal.
+		echo -e $3 "$2$1\e[0m"
+	else
+		echo $3 "$1"
+	fi
+}
+
+# Check if all needed binarys are present
+checkBinarys "pv" "mkdir" "basename" "dirname" "stat" "chmod" "chown" "id" "readlink" "touch" "sed"
+
+# Catch CTRL-C
+trap trapCtrlC SIGINT
+
+# Check options
+while [ 1 ]; do
+	case "$1" in
+		"-c")	# Don't copy files, just create directory structure when -r is used.
+			structureOnly=true
+			cecho "Info: File copy disabled." $yellow
+			;;
+		"-d")	# No dereferance of symbolic links
+			checkBinarys "ln"
+			createSymlink=true
+			;;
+		"-f")	# Override destination files if file size is different
+			force=f
+			;;
+		"-F")	# Override destination files, even if size is equal
+			force=F
+			;;
+		"-h")	# Create hard links instead of copying files
+			checkBinarys "ln"
+			hardlinks=true
+			;;
+		"-p")	# Peserve ownerhsip and file permission
+			preserve=true
+			;;
+		"-r")	# Copy directories recursively
+			recursive=true
+			;;
+		"-s")	# Create symbolic links instead of copying files
+			checkBinarys "ln"
+			symlinks=true
+			;;
+		"-t")	# Don't copy date
+			copyDate=false
+			;;
+		"-v")	# Verify file copy with SHA-1
+			checkBinarys "cut" "sha1sum"
+			verify=true
+			;;
+		"-V")	# Be verbose
+			checkBinarys "sed"
+			verbose=true
+			;;
+		*)	# No hit; Abort
+			break
+			;;
+	esac
+	shift
+done
+
+# At least two parameters are given
+if [ $# -gt 1 ]; then
+	if [ $# -eq 2 ]; then
+		file2file=true
+	fi
+	dstDir=${@: -1}
+	dstDirFix=${@: -1}
+	if [ ! -d "$dstDir" ] && [ ! $file2file ]; then
+		if [ -e "$dstDir" ]; then
+			cecho "Error: Last argument must be a directory when copying multiple files." $red
+			echo
+			exit 1
+		else
+			createDirectory "" "$dstDir"
+		fi
+	fi
+	for i in "$@"; do
+		let c++
+		[ $c -eq $# ] && break # skip last argument
+		if [ ! -f "$i" ]; then
+			if [ -d "$i" ];  then
+				copyDirectory "$i" "$i"
+			else
+				if [ ! -h "$i" ]; then # symlinks will be catched in copyFile()
+					cecho "Error: File '$i' does not exist. Skipping.." $red
+					echo
+				fi
+			fi
+		else
+			copyFile "$i"
+		fi
+	done
+else
+	echo "cpm-$version: A file and directory copy tool with status indicators"
+	echo
+	echo "Syntax:   cpm [options] <source> <destination>"
+	echo
+	echo "Options:  -c     Don't copy files, just create directory structure when -r is used."
+	echo "          -d     No dereference of symbolic links"
+	echo "          -f     Overwrite destination files"
+	echo "          -F     Overwrite destination files, even if size is equal"
+	echo "          -h     Create hard links instead of copying files"
+	echo "          -r     Copy directories recursively"
+	echo "          -s     Create symbolic links instead of copying files"
+	echo "          -t     Don't copy date"
+	echo "          -p     Preserve ownership and file permissions (default for root)"
+	echo "          -v     Verify file copy with SHA-1"
+	echo "          -V     Be verbose"
+	echo
+	exit 1
+fi
