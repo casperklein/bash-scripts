@@ -15,6 +15,9 @@ Make $directory, then change path to $directory.
 ## pingi
 Ping that also shows "Request timed out" known from Windows.
 
+## tcp-wait
+Wait until destination port is open.
+
 ## treesize
 A simple "treesize" bash script.
 

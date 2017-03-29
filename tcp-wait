@@ -1,0 +1,27 @@
+#!/bin/bash
+
+if [ $# -lt 2 ]; then
+	echo "Wait until destination port is open." >&2
+	echo >&2
+	echo "Usage: $(basename "$0") <host> <port> [<retry>]" >&2
+	echo >&2
+	echo "host	destination host" >&2
+	echo "port	destination tcp port" >&2
+	echo "retry	wait n seconds before retry (default is 1)" >&2
+	echo >&2
+	exit 1
+fi
+
+if [ -z "$3" ]; then
+	WAIT=1
+else
+	WAIT=$3
+fi
+
+echo -n "Connecting to ($1:$2)"
+#while !(nmap -P0 -p$2 $1 2> /dev/null | grep -q open ); do
+while !(nc -z -w 1 "$1" "$2" 2> /dev/null ); do
+	echo -n "."
+	sleep $WAIT
+done
+echo -e " \e[0;32mOK\e[0m"
