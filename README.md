@@ -6,6 +6,12 @@ Concatenate files (gziped files decompressed) and print on the standard output.
 ## cpm
 A file and directory copy tool with status indicators.
 
+## decryptFile
+Decrypt a given file.
+
+## encryptFile
+Encrypt a given file.
+
 ## makepass
 Generates a password of custom length.
 
