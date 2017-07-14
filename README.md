@@ -6,6 +6,9 @@ Concatenate files (gziped files decompressed) and print on the standard output.
 ## cpm
 A file and directory copy tool with status indicators.
 
+## date-example
+Shows date command variables and their meaning.
+
 ## decryptFile
 Decrypt a given file.
 
