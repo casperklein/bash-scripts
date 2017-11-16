@@ -4,7 +4,7 @@
 Concatenate files (gziped files decompressed) and print on the standard output.
 
 ## chclone
-Copy ownership and file mod bits
+Copy ownership and mod bits
 
 ## cpm
 A file and directory copy tool with status indicators.
