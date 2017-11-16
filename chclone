@@ -1,0 +1,13 @@
+#!/bin/bash
+
+APP=${0##*/}
+
+# check if parameter count is 2 and reference and target file exists
+if [ $# -ne 2 ] || [ ! -f "$1" ] || [ ! -f "$2" ]; then
+	echo -e "Copy ownership and file mod bits\n" >&2
+	echo -e "Usage: $APP <reference file> <target file>\n" >&2
+	exit 1
+fi
+
+chown --reference="$1" "$2"
+chmod --reference="$1" "$2"
