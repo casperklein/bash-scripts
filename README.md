@@ -18,6 +18,9 @@ Decrypt a given file.
 ## encryptFile
 Encrypt a given file.
 
+## exe
+Executes a command and show result/output in a nice way.
+
 ## makepass
 Generates a password of custom length.
 
