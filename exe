@@ -31,6 +31,8 @@ exe() {
 	else
 		# errocode > 0
 		CODE=$?
+		# if output is more than one line, add new line in front
+		[[ "$RES" == *$'\n'* ]] && RES="\n$RES"
 		echo -en $DELETE
 		echo -e "[$RED ERROR $RESET] $YELLOW>>$RESET $CMD $YELLOW>>$RESET $RED$RES$RESET"
 		return $CODE
