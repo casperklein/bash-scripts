@@ -7,7 +7,10 @@ Concatenate files (gziped files decompressed) and print on the standard output.
 Copy ownership and mod bits
 
 ## cpm
-A file and directory copy tool with status indicators.
+A file and directory copy tool with status indicators. Deprecated. Use 'cpv' instead.
+
+## cpv
+A file and directory copy tool with status indicators (thx to PV)
 
 ## date-example
 Shows date command variables and their meaning.
