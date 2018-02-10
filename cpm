@@ -1,5 +1,8 @@
 #!/bin/bash
 
+echo Obsolet. Use CPV instead.
+exit 1
+
 # cpm:      A file and directory copy tool with status indicators
 # Version:  0.45
 # Build:    12-Sep-2012
