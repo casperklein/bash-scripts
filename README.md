@@ -22,7 +22,7 @@ Decrypt a given file.
 Encrypt a given file.
 
 ## exe
-Executes a command and show result/output in a nice way.
+Executes a command and show result/output in a nice way. Original return code is preserved.
 
 ## makepass
 Generates a password of custom length.
