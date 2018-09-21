@@ -25,7 +25,7 @@ trap cleanUp INT EXIT TERM
 
 exe() {
 	# Prepare script
-	SCRIPT=$(mktemp /tmp/$APP-XXX) || {
+	SCRIPT=$(mktemp "/tmp/$APP-XXX") || {
 		echo -e "Error: Could not create temporary script file.\n" >&2
 		exit 1
 	}
@@ -48,8 +48,7 @@ exe() {
 	done
 	CMD=${CMD# }
 	chmod u+x "$SCRIPT"
-cat $SCRIPT
-echo
+
 	# Logging
 	if [ -n "$LOG" ]; then
 		echo -ne $(date "+%F %T")"\t" >> "$LOG"
@@ -62,7 +61,7 @@ echo
 	
 	if RES=$($SCRIPT 2>&1); then
 		# success; is there output?
-		[ ! -z "$RES" ] && {
+		[ -n "$RES" ] && {
 			# more than one line output?
 			if [[ "$RES" == *$'\n'* ]]; then
 				COUNT=$(( ${#CMD} + 14 ))
@@ -79,7 +78,7 @@ echo
 		# errocode > 0
 		CODE=$?
 		# is there output?
-		[ ! -z "$RES" ] && {
+		[ -n "$RES" ] && {
 			# more than one line output?
 			if [[ "$RES" == *$'\n'* ]]; then
 				COUNT=$(( ${#CMD} + 17 ))
