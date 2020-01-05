@@ -1,8 +1,12 @@
 #!/bin/bash
 
+echo "Do not trust it ;-)" >&2
+echo "Use instead: alias copy='low rsync -aHXz --numeric-ids --info=progress2 --no-inc-recursive'" >&2
+exit 1
+
 # cpv:      A file and directory copy tool with status indicators (thx to pipe viewer)
-# Version:  0.1
-# Build:    31-Jan-2018
+# Version:  0.2
+# Build:    01-Mar-2018
 # Author:   Heiko Barth
 # Licence:  Beer-Ware (See: http://en.wikipedia.org/wiki/Beerware)
 
@@ -15,7 +19,7 @@ done
 
 if [ $# -lt 2 ]; then
 	APP=${0##*/}
-	VER=0.1
+	VER=0.2
 	echo "$APP $VER">&2
 	echo >&2
 	echo "Syntax: $APP <source file/directory> <destination file/directory>" >&2
@@ -26,6 +30,9 @@ if [ $# -lt 2 ]; then
 	echo >&2
 	exit 1
 fi
+
+trap exit INT EXIT
+trap "echo -e '\nSIGTERM received.' >&2; exit" TERM
 
 # colors
 hash tput 2>/dev/null && {
@@ -55,6 +62,8 @@ checkBinarys "pv" "chown" "chmod" "find" "mkdir" "du" "tar" "bc"
 PV=tbper
 
 syncPermissions() {
+	# sync only if root
+	[ "$(id -u)" != "0" ] && return
 	chmod --reference="$1" "$2" &&
 	chown --reference="$1" "$2" || {
 		echoError "Error: chmod/chown failed."
@@ -91,49 +100,87 @@ humanReadable() {
 	fi
 }
 
+isFile() {
+	# existing and readable?
+	[ -r "$1" ] &&
+	# not directory
+	[ ! -d "$1" ] &&
+	# not socket
+	[ ! -S "$1" ] &&
+	# not a special file --> /dev/random
+	# [ ! -c "$1" ] &&
+	# not FIFO
+	[ ! -p "$1" ] &&
+	return 0
+
+#echo check	
+#	[ -h "$1" ] && return 0
+
+	return 1
+}
+
 if [ $# -eq 2 ]; then
-	[ ! -e "$1" ] && echoError "Error: '$1' does not exist."
+	# basic error checking
+	[ ! -e "$1" ] && [ ! -h "$1" ] && echoError "Error: '$1' does not exist."
+	[ -e "$2" ] && [ ! -w "$2" ] && echoError "Error: '$2' already exist but is not writeable."
 	
 	# file to dir
-	if [ -f "$1" ] && [ -d "$2" ]; then
-		BASE=$(basename "$1")
-		if [ $(readlink -f "$1") == $(readlink -f "$2"/"$BASE") ]; then
+	# if [ ! -d "$1" ] && [ -r "$1" ] && [ -d "$2" ]; then
+	if isFile "$1" && [ -d "$2" ]; then
+		BASE=${1##*/}
+		DST=$(readlink -f "$2"/"$BASE")
+		if [ "$(readlink -f "$1")" == "$DST" ]; then
 			echoError "Error: Source and destination file is the same."
-		elif [ ! $FORCE ] && [ -f "$2"/"$BASE" ]; then
-			echo "File '$2/$BASE' already exists." >&2
+		elif [ ! $FORCE ] && [ -f "$DST" ]; then
+			echo "File '$DST' already exists." >&2
 			read -p 'Do you want to overwrite? [y/N] ' input
 			[ "$input" != "y" ] && exit 1
 		fi
 		SIZEH=$(humanReadable $(stat -c%s "$1") 0)
-		echo -e "${YELLOW}File: $RESET$1 [$SIZEH] $YELLOW-->$RESET $(readlink -f "$2"/"$BASE")" # readlink removes double slash
-		pv -$PV "$1" > "$2"/"$BASE" &&
-		syncPermissions "$1" "$2"/"$BASE" &&
-		echo -e "${GREEN}OK$RESET" || echo -e "${RED}ERROR$RESET"
+		[ -z "$SIZEH" ] && SIZEH=$(stat -c%F "$1")
+		echo "${YELLOW}File: $RESET$1 [$SIZEH] $YELLOW-->$RESET $DST" # readlink removes double slash
+		pv -$PV "$1" > "$DST" &&
+		syncPermissions "$1" "$DST" &&
+		echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 		exit
 	# file to file
-	elif [ -f "$1" ]; then
-		if [ $(readlink -f "$1") == $(readlink -f "$2") ]; then
+	# elif [ ! -d "$1" ] && [ -r "$1" ]; then
+	elif isFile "$1" ; then
+		DST=$(readlink -f "$2")
+		if [ "$(readlink -f "$1")" == "$DST" ]; then
 			echoError "Error: Source and destination file is the same."
 		elif [ ! $FORCE ] && [ -f "$2" ]; then
 			echo "File '$2' already exists." >&2
 			read -p 'Do you want to overwrite? [y/N] ' input
 			[ "$input" != "y" ] && exit 1
 		fi
+		touch "$2" || echoError "Error: Destination file '$2' could not be created."
 		SIZEH=$(humanReadable $(stat -c%s "$1") 0)
-		echo -e "${YELLOW}File: $RESET$1 [$SIZEH] $YELLOW-->$RESET $(readlink -f "$2")" # readlink removes double slash
-		pv -$PV "$1" > "$2" &&
-		syncPermissions "$1" "$2" &&
-		echo -e "${GREEN}OK$RESET" || echo -e "${RED}ERROR$RESET"
+		[ -z "$SIZEH" ] && SIZEH=$(stat -c%F "$1")
+		echo "${YELLOW}File: $RESET$1 [$SIZEH] $YELLOW-->$RESET $DST"
+		pv -$PV "$1" > "$DST" &&
+		syncPermissions "$1" "$DST" &&
+		echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
+		exit
+	# symlink 
+	elif [ -h "$1" ]; then
+		echo "${YELLOW}Copy Symlink: $RESET$1 $YELLOW-->$RESET $2"
+		cp -a "$1" "$2" && # 2do: check if dst symlink already exist
+		echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 		exit
 	fi
 fi
 
-DST=${@: -1} # last argument
+DST=${@: -1} # last argument (directory)
+DST=$(readlink -f "$DST")
 
-if [ ! -d "$DST" ]; then
+if [ -e "$DST" ] && [ ! -d "$DST" ]; then
+	echoError "Error: Target '$DST' is not a directory and already exist. Please remove first."
+elif [ ! -d "$DST" ]; then
 	[ $VERBOSE ] && echo "${YELLOW}Creating directory: $RESET$DST"
-	mkdir -p "$DST" 2> /dev/null || echoError "Error: Could not create directory '$DST'."
+	mkdir -p "$DST" 2> /dev/null && CREATED=1 || echoError "Error: Could not create directory '$DST'."
 else
+	[ ! -w "$DST" ] && echoError "Error: Destination directory '$DST' is not writeable."
 	if [ ! $FORCE ]; then
 		echo "Destination directory '$DST' already exist." >&2
 		read -p 'Files/Directorys in '$DST' will be overwritten! Continue? [y/N] ' input
@@ -142,36 +189,60 @@ else
 fi
 
 for i in "$@"; do
-	[ ! -e "$i" ] && echoError "Error: '$i' does not exist."
+	[ ! -e "$i" ] && [ ! -h "$i" ] && echoError "Error: '$i' does not exist."
 done
 
 for i in "$@"; do
 	((j++))
 	[ $# == $j ] && break
 	
-	iBASE=$(basename "$i")
-	if [ -f "$i" ]; then
+	BASE=$(basename "$i") # ${i##*/} not suitable for directorys
+	#BASEi=$(readlink -f "$BASE")
+	
+	if [ ! $FORCE ]; then
+		if [ -e "$DST"/"$BASE" ]; then # !!!!!!!!!!!!!!!!!!!!!! doppelslah entfernen
+			read -p  "$DST/$BASE already exist! Override? [y/N] " input
+			[ "$input" != "y" ] && continue
+		fi
+	fi
+
+	if isFile "$i"; then
 		# file to file
+		touch "$DST"/"$BASE" || echoError "Error: Destination file '$2' could not be created."
 		SIZEH=$(humanReadable $(stat -c%s "$i") 0)
-		echo "${YELLOW}File: $RESET$i [$SIZEH] $YELLOW-->$RESET $(readlink -f "$DST"/"$iBASE")" # readlink removes double slash
-		pv -$PV "$i" > "$DST"/"$iBASE" &&
-		syncPermissions "$i" "$DST"/"$iBASE" && echo -e "${GREEN}OK$RESET" || echo -e "${RED}ERROR$RESET"
+		[ -z "$SIZEH" ] && SIZEH=$(stat -c%F "$i")
+		echo "${YELLOW}File: $RESET$i [$SIZEH] $YELLOW-->$RESET $DST/$BASE" # readlink removes double slash
+		pv -$PV "$i" > "$DST"/"$BASE" &&
+		syncPermissions "$i" "$DST"/"$BASE" && echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 	elif [ -d "$i" ]; then
+echo "${YELLOW}Calculating estimate size..$RESET"
 		SIZE=$(du -sb "$i" | grep -oP '^[0-9]+')
 		SIZEH=$(humanReadable $SIZE 0)
 		[ $VERBOSE ] && TAR=cvC || TAR=cC
-		if [ $# -eq 2 ]; then
-			# 1 dir to 1 dir
-			echo -e "${YELLOW}Directory:$RESET $i [$SIZEH] $YELLOW-->$RESET $(readlink -f "$DST")" # readlink removes double slash
-			tar $TAR "$i" . | pv -${PV}s $SIZE | tar xC "$DST" && echo -e "${GREEN}OK$RESET" || echo -e "${RED}ERROR$RESET"
+		if [ $# -eq 2 ] && [ "$CREATED" == "1" ]; then
+			# dir to 1 dir
+echo "1:1"
+			echo "$DST/$BASE"
+			echo "${YELLOW}Directory:$RESET $i [$SIZEH] $YELLOW-->$RESET $DST" # readlink removes double slash
+			tar $TAR "$i" . | pv -${PV}s $SIZE | tar xC "$DST" && echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 		else
+echo "DST $DST"
+			
 			# dir to dir
-			echo "${YELLOW}Directory:$RESET $i [$SIZEH] $YELLOW-->$RESET $(readlink -f "$DST"/$(basename "$i"))" # readlink removes double slash
-			tar $TAR "$(dirname "$i")" $iBASE | pv -${PV}s $SIZE | tar xC "$DST" && echo -e "${GREEN}OK$RESET" || echo -e "${RED}ERROR$RESET"
+			#echo "${YELLOW}Directory:$RESET $i [$SIZEH] $YELLOW-->$RESET $(readlink -f "$DST"/$(basename "$i"))" # readlink removes double slash
+			echo "${YELLOW}Directory:$RESET $i [$SIZEH] $YELLOW-->$RESET $DST/$BASE" # readlink removes double slash
+echo tar $TAR "$(dirname "$i")" $BASE
+			tar $TAR "$(dirname "$i")" $BASE | pv -${PV}s $SIZE | tar xC "$DST" && echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 		fi
+	# symlink 
+	elif [ -h "$i" ]; then
+		echo "${YELLOW}Copy symlink: $RESET$i $YELLOW-->$RESET $DST"
+		cp -a "$i" "$DST" && # 2do: check if dst symlink already exist
+		echo "${GREEN}OK$RESET" || echo "${RED}ERROR$RESET"
 	else
 		echo >&2
-		echo "${RED}Error. '$i' is not a file or directory.$RESET" >&2
+		echo "${RED}Error: '$i' is not a file or directory.$RESET" >&2
+		echo "${RED}Type: $(stat -c%F "$i")$RESET" >&2
 		echo >&2
 		echo "${YELLOW}What did you try to do? Please report :) THX$RESET" >&2
 		exit 1
