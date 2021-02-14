@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# or just use: ping -O
+# or just use: ping -O [If iputils-ping is installed. Not available in inetutils-ping]
 
 # Requires: awk, bc, grep, sed, ping and bash of course ;)
 
